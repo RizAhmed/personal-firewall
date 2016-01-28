@@ -1,9 +1,10 @@
 #!/bin/bash
 #shell vars
 IPT="iptables"
-#this must match the name of the network card on the machine
+#this depends on the network card so set the name accordingly
 ETH="eno1"
-LOOPBACK_INTERFACE="lo"
+#loopback for localhost
+LB_INTERFACE="lo"
 LOOPBACK_IP="127.0.0.1"
 
 #shortcut to resetting the default policy
@@ -73,14 +74,27 @@ $IPT -A INPUT -p tcp --tcp-flags ALL SYN,RST,ACK,FIN,URG -j DROP
 $IPT -A INPUT -p tcp --tcp-flags SYN,RST SYN,RST -j DROP
 $IPT -A INPUT -p tcp --tcp-flags SYN,FIN SYN,FIN -j DROP
 
+#drop inbound traffic to port 80 (http) from source ports < 1024
+$IPT -A INPUT -p tcp --dport 80 ! --sport 1:1023 -j DROP
+$IPT -A INPUT -p tcp --dport 80 --sport 1:1023 -j DROP
+
 #route stuff not dropped into accounting rules
 $IPT -A INPUT -p tcp -i $ETH -j track-inbound
 
+#allow everything from localhost
+$IPT -A INPUT -p ALL -i $LB_INTERFACE -j ACCEPT
+$IPT -A OUTPUT -p ALL -o $LB_INTERFACE -j ACCEPT
+$IPT -A OUTPUT -p ALL -s $LOOPBACK_IP -j ACCEPT
+
 #allow DHCP traffic
-$IPT -A INPUT -p UDP -s 0/0 --sport 67 --dport 68 -j ACCEPT
-$IPT -A OUTPUT -p UDP --dport 68 -m state --state NEW -j ACCEPT
+$IPT -A INPUT -p UDP --sport 68 -j ACCEPT
+$IPT -A INPUT -p TCP --sport 68 -j ACCEPT
+$IPT -A OUTPUT -p UDP --dport 68 -j ACCEPT
+$IPT -A OUTPUT -p TCP --dport 68 -j ACCEPT
 
 #allow DNS traffic
+$IPT -A INPUT -p TCP --sport 53 -j ACCEPT
+$IPT -A INPUT -p UDP --sport 53 -j ACCEPT
 $IPT -A OUTPUT -p TCP --dport 53 -m state --state NEW -j ACCEPT
 $IPT -A OUTPUT -p UDP --dport 53 -m state --state NEW -j ACCEPT
 
@@ -101,24 +115,6 @@ $IPT -A OUTPUT -p tcp -m multiport --sport 80,443 -j ACCEPT
 #for the input chain
 $IPT -A track-inbound -p tcp -s 0/0 --dport 80 --sport 1024:65535 -j ACCEPT
 $IPT -A track-inbound -p tcp -s 0/0 --dport 22 -j ACCEPT
-#for the forward chain
-$IPT -A FORWARD -i $ETH -m tcp -p TCP --dport 22 -j ACCEPT
-$IPT -A FORWARD -i $ETH -m tcp -p TCP --dport 80 -j ACCEPT
-$IPT -A FORWARD -i $ETH -m tcp -p TCP --sport 22 -j ACCEPT
-$IPT -A FORWARD -i $ETH -m tcp -p TCP --sport 80 -j ACCEPT
-$IPT -A FORWARD -s 0/0 -m tcp -p TCP --dport 22 -j ACCEPT
-$IPT -A FORWARD -s 0/0 -m tcp -p TCP --dport 80 -j ACCEPT
-$IPT -A FORWARD -s 0/0 -m tcp -p TCP --sport 22 -j ACCEPT
-$IPT -A FORWARD -s 0/0 -m tcp -p TCP --sport 80 -j ACCEPT
-
-$IPT -A FORWARD -i $ETH -m tcp -p TCP --dport 22 -j track-inbound
-$IPT -A FORWARD -i $ETH -m tcp -p TCP --dport 80 -j track-inbound
-$IPT -A FORWARD -i $ETH -m tcp -p TCP --sport 22 -j track-inbound
-$IPT -A FORWARD -i $ETH -m tcp -p TCP --sport 80 -j track-inbound
-$IPT -A FORWARD -s 0/0 -m tcp -p TCP --dport 22 -j track-outbound
-$IPT -A FORWARD -s 0/0 -m tcp -p TCP --dport 80 -j track-outbound
-$IPT -A FORWARD -s 0/0 -m tcp -p TCP --sport 22 -j track-outbound
-$IPT -A FORWARD -s 0/0 -m tcp -p TCP --sport 80 -j track-outbound
 #for the output chain
 $IPT -A track-outbound -p TCP --sport 80 -j ACCEPT
 $IPT -A track-outbound -p TCP --dport 80 -j ACCEPT
