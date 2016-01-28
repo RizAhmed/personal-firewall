@@ -1,7 +1,8 @@
 #!/bin/bash
 #shell vars
 IPT="iptables"
-ETH="eth0"
+#this must match the name of the network card on the machine
+ETH="eno1"
 LOOPBACK_INTERFACE="lo"
 LOOPBACK_IP="127.0.0.1"
 
@@ -72,6 +73,9 @@ $IPT -A INPUT -p tcp --tcp-flags ALL SYN,RST,ACK,FIN,URG -j DROP
 $IPT -A INPUT -p tcp --tcp-flags SYN,RST SYN,RST -j DROP
 $IPT -A INPUT -p tcp --tcp-flags SYN,FIN SYN,FIN -j DROP
 
+#route stuff not dropped into accounting rules
+$IPT -A INPUT -p tcp -i $ETH -j track-inbound
+
 #allow DHCP traffic
 $IPT -A INPUT -p UDP -s 0/0 --sport 67 --dport 68 -j ACCEPT
 $IPT -A OUTPUT -p UDP --dport 68 -m state --state NEW -j ACCEPT
@@ -79,9 +83,6 @@ $IPT -A OUTPUT -p UDP --dport 68 -m state --state NEW -j ACCEPT
 #allow DNS traffic
 $IPT -A OUTPUT -p TCP --dport 53 -m state --state NEW -j ACCEPT
 $IPT -A OUTPUT -p UDP --dport 53 -m state --state NEW -j ACCEPT
-
-#route stuff not dropped into accounting rules
-$IPT -A INPUT -p tcp -i $ETH -j track-inbound
 
 #allow established and related incoming traffic
 $IPT -A INPUT -p ALL -i $ETH -m state --state ESTABLISHED,RELATED -j ACCEPT
@@ -101,6 +102,15 @@ $IPT -A OUTPUT -p tcp -m multiport --sport 80,443 -j ACCEPT
 $IPT -A track-inbound -p tcp -s 0/0 --dport 80 --sport 1024:65535 -j ACCEPT
 $IPT -A track-inbound -p tcp -s 0/0 --dport 22 -j ACCEPT
 #for the forward chain
+$IPT -A FORWARD -i $ETH -m tcp -p TCP --dport 22 -j ACCEPT
+$IPT -A FORWARD -i $ETH -m tcp -p TCP --dport 80 -j ACCEPT
+$IPT -A FORWARD -i $ETH -m tcp -p TCP --sport 22 -j ACCEPT
+$IPT -A FORWARD -i $ETH -m tcp -p TCP --sport 80 -j ACCEPT
+$IPT -A FORWARD -s 0/0 -m tcp -p TCP --dport 22 -j ACCEPT
+$IPT -A FORWARD -s 0/0 -m tcp -p TCP --dport 80 -j ACCEPT
+$IPT -A FORWARD -s 0/0 -m tcp -p TCP --sport 22 -j ACCEPT
+$IPT -A FORWARD -s 0/0 -m tcp -p TCP --sport 80 -j ACCEPT
+
 $IPT -A FORWARD -i $ETH -m tcp -p TCP --dport 22 -j track-inbound
 $IPT -A FORWARD -i $ETH -m tcp -p TCP --dport 80 -j track-inbound
 $IPT -A FORWARD -i $ETH -m tcp -p TCP --sport 22 -j track-inbound
